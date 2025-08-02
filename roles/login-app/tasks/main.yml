@@ -1,0 +1,97 @@
+---
+- name: Deploy Login App with Docker Swarm
+  hosts: all
+  become: yes 
+  tasks:
+    - name: Install Docker
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - docker.io
+
+    - name: Install Docker Compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Initialize Docker Swarm
+      command: docker swarm init
+      ignore_errors: yes  
+      register: swarm_init
+
+    - name: Create app directory
+      file:
+        path: /opt/login-app
+        state: directory
+        mode: '0755'
+
+    - name: Copy Docker Compose file
+      copy:
+        src: files/docker-compose.yml
+        dest: /opt/login-app/docker-compose.yml
+        mode: '0644'
+
+    - name: Create backend directory
+      file:
+        path: /opt/login-app/backend
+        state: directory
+        mode: '0755'
+
+    - name: Copy backend code
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '0644'
+      with_items:
+        - { src: 'files/backend/server.js', dest: '/opt/login-app/backend/server.js' }
+        - { src: 'files/backend/package.json', dest: '/opt/login-app/backend/package.json' }
+        - { src: 'files/backend/Dockerfile', dest: '/opt/login-app/backend/Dockerfile' }
+
+    - name: Create frontend directory
+      file:
+        path: /opt/login-app/frontend
+        state: directory
+        mode: '0755'
+
+    - name: Create frontend/src directory
+      file:
+        path: /opt/login-app/frontend/src
+        state: directory
+        mode: '0755'
+
+    - name: Copy frontend code
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '0644'
+      with_items:
+        - { src: 'files/frontend/package.json', dest: '/opt/login-app/frontend/package.json' }
+        - { src: 'files/frontend/index.html', dest: '/opt/login-app/frontend/index.html' }
+        - { src: 'files/frontend/vite.config.js', dest: '/opt/login-app/frontend/vite.config.js' }
+        - { src: 'files/frontend/tailwind.config.js', dest: '/opt/login-app/frontend/tailwind.config.js' }
+        - { src: 'files/frontend/Dockerfile', dest: '/opt/login-app/frontend/Dockerfile' }
+        - { src: 'files/frontend/src/App.jsx', dest: '/opt/login-app/frontend/src/App.jsx' }
+        - { src: 'files/frontend/src/main.jsx', dest: '/opt/login-app/frontend/src/main.jsx' }
+
+    - name: Copy database initialization script
+      copy:
+        src: files/init_db.sql
+        dest: /opt/login-app/init_db.sql
+        mode: '0644'
+
+    - name: Deploy app stack with Docker Swarm
+      command: docker stack deploy -c docker-compose.yml login-app
+      args:
+        chdir: /opt/login-app
+      register: stack_deploy
+      changed_when: stack_deploy.rc == 0
